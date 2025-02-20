@@ -1,31 +1,22 @@
 import os
 import shutil
-import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
 
-import humanize
-from fastapi import FastAPI, File, Form, Request, UploadFile
+from fastapi import FastAPI, File, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-# Create app
-app = FastAPI(title="HTMX File Upload")
+app = FastAPI(title="SUNET Transcriber")
 
-# Create upload directory if it doesn't exist
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
-# Create transcribe directory if it doesn't exist
 TRANSCRIBE_DIR = Path("transcribe")
 TRANSCRIBE_DIR.mkdir(exist_ok=True)
 
-# Setup templates
 templates = Jinja2Templates(directory="templates")
-
-# Serve static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
