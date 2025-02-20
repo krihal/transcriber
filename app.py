@@ -122,7 +122,7 @@ async def get_files():
     if files == 0:
         html = """
         <div class="alert alert-info">
-            No files uploaded yet.
+            No files transribed yet.
         </div>
         """
 
