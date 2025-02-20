@@ -48,8 +48,8 @@ def transcribe_audio(audio_path):
 
         # Write transcription to file
         with open(output_path, "w", encoding="utf-8") as f:
-            for line in result["text"].split("\n"):
-                f.write(line + "\n")
+            for line in result["segments"]:
+                f.write(line["text"] + "\n")
 
         logger.info(f"Transcription completed and saved to {output_path}")
 
