@@ -1,11 +1,15 @@
+import json
 import logging
 import os
 import queue
 import threading
 import time
+
 from pathlib import Path
 
 import whisper
+import zmq
+
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
@@ -16,9 +20,8 @@ logging.basicConfig(
 logger = logging.getLogger("whisper_transcriber")
 
 # Configuration
-WATCH_DIRECTORY = "uploads"
-OUTPUT_DIRECTORY = "transcribe"
-WHISPER_MODEL = "base"  # Options: "tiny", "base", "small", "medium", "large"
+WATCH_DIRECTORY = "transcoded"
+OUTPUT_DIRECTORY = "transcribed"
 SUPPORTED_AUDIO_EXTENSIONS = {".mp3", ".wav", ".mp4", ".m4a", ".flac", ".ogg"}
 MAX_WORKER_THREADS = 2
 file_queue = queue.Queue()
@@ -27,16 +30,17 @@ file_queue = queue.Queue()
 os.makedirs(WATCH_DIRECTORY, exist_ok=True)
 os.makedirs(OUTPUT_DIRECTORY, exist_ok=True)
 
-# Load Whisper model
-logger.info(f"Loading Whisper model: {WHISPER_MODEL}")
-model = whisper.load_model(WHISPER_MODEL)
-logger.info("Whisper model loaded successfully")
 
-
-def transcribe_audio(audio_path):
+def transcribe_audio(audio_path, model):
     """Transcribe audio file using Whisper"""
     try:
         logger.info(f"Starting transcription of {audio_path}")
+
+        # Load Whisper model
+        logger.info(f"Loading Whisper model: {model}")
+        model = whisper.load_model(model)
+
+        logger.info("Whisper model loaded successfully")
 
         # Get transcription
         result = model.transcribe(str(audio_path))
@@ -59,21 +63,28 @@ def transcribe_audio(audio_path):
 
 def worker():
     """Worker thread that processes files from the queue"""
+    files = {}
+
     while True:
-        try:
-            # Get a file path from the queue
-            file_path = file_queue.get()
-            if file_path is None:  # None is our signal to stop
-                break
+        # Get a file path from the queue
+        file_data = file_queue.get()
 
-            # Process the file
-            transcribe_audio(file_path)
+        if file_data is None:  # None is our signal to stop
+            break
 
-        except Exception as e:
-            logger.error(f"Worker thread error: {str(e)}")
-        finally:
-            # Mark the task as done
-            file_queue.task_done()
+        if file_data["file_path"] not in files:
+            files[file_data["file_path"]] = {"ready": False, "model": None}
+
+        files[file_data["file_path"]]["ready"] = True
+
+        if "model" in file_data:
+            files[file_data["file_path"]]["model"] = file_data["model"]
+
+        # Process the file
+        if files[file_data["file_path"]]["ready"] and files[file_data["file_path"]]["model"]:
+            transcribe_audio(file_data["file_path"], file_data["model"])
+
+        file_queue.task_done()
 
 
 class AudioFileHandler(FileSystemEventHandler):
@@ -83,7 +94,7 @@ class AudioFileHandler(FileSystemEventHandler):
         self.processed_files = set()
 
     def on_created(self, event):
-        # Skip directories and non-audio files
+       # Skip directories and non-audio files
         if event.is_directory:
             return
 
@@ -99,7 +110,7 @@ class AudioFileHandler(FileSystemEventHandler):
         self.processed_files.add(str(file_path))
 
         # Add file to processing queue
-        file_queue.put(str(file_path))
+        file_queue.put({"file_path": str(file_path), "ready": True})
 
 
 def main():
@@ -116,11 +127,23 @@ def main():
     observer.schedule(event_handler, WATCH_DIRECTORY, recursive=False)
     observer.start()
 
+    context = zmq.Context()
+    mq_socket = context.socket(zmq.SUB)  # Subscriber socket
+    mq_socket.connect("tcp://localhost:5555")
+    mq_socket.subscribe("")
+
     logger.info(f"Watching directory: {WATCH_DIRECTORY}")
     logger.info(f"Transcriptions will be saved to: {OUTPUT_DIRECTORY}")
 
     try:
         while True:
+            print("Listening for messages...")
+            filedata = mq_socket.recv_string()
+
+            logger.info(f"Received message: {filedata}")
+
+            file_queue.put(json.loads(filedata))
+
             time.sleep(1)
     except KeyboardInterrupt:
         logger.info("Stopping observer...")

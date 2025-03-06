@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 
@@ -14,12 +15,18 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+import zmq
+
+context = zmq.Context()
+mq_socket = context.socket(zmq.PUB)  # Publisher socket
+mq_socket.bind(f"tcp://*:5555")
+
 app = FastAPI(title="SUNET Transcriber")
 
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
-TRANSCRIBE_DIR = Path("transcribe")
+TRANSCRIBE_DIR = Path("transcribed")
 TRANSCRIBE_DIR.mkdir(exist_ok=True)
 
 templates = Jinja2Templates(directory="templates")
@@ -40,6 +47,12 @@ async def upload_file(file: UploadFile = File(...), model: str = Form("whisper-l
         # Save the file
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
+
+        # Send the file path to the transcriber
+        mq_socket.send_string(json.dumps(
+            {"file_path": file_path, "model": model}, default=str))
+
+        print("File sent to transcriber")
 
         # Return success message (HTMX will insert this into #messages)
         return HTMLResponse(
@@ -65,7 +78,7 @@ async def upload_file(file: UploadFile = File(...), model: str = Form("whisper-l
         )
 
 
-@app.get("/api/files", response_class=HTMLResponse)
+@ app.get("/api/files", response_class=HTMLResponse)
 async def get_files():
     html = """
     <table class="table table-striped table-hover">
@@ -101,8 +114,8 @@ async def get_files():
                 <a href="/api/files/{file}" class="btn btn-sm btn-primary">
                     Download
                 </a>
-                <button 
-                    hx-delete="/api/files/{file}" 
+                <button
+                    hx-delete="/api/files/{file}"
                     hx-confirm="Are you sure you want to delete this file?"
                     hx-target="#files-table"
                     class="btn btn-sm btn-danger">
@@ -127,7 +140,7 @@ async def get_files():
     return HTMLResponse(html)
 
 
-@app.get("/api/files/{file_id}")
+@ app.get("/api/files/{file_id}")
 async def download_file(file_id: str):
     for file in os.listdir(TRANSCRIBE_DIR):
         filename = os.path.join(TRANSCRIBE_DIR, file)
@@ -140,7 +153,7 @@ async def download_file(file_id: str):
     return {"error": "File not found"}
 
 
-@app.delete("/api/files/{file_id}", response_class=HTMLResponse)
+@ app.delete("/api/files/{file_id}", response_class=HTMLResponse)
 async def delete_file(file_id: str):
     for file in os.listdir(TRANSCRIBE_DIR):
         filename = os.path.join(TRANSCRIBE_DIR, file)
