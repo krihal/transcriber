@@ -16,7 +16,7 @@ RUN apt-get update && apt-get install -y \
 RUN git clone https://github.com/krihal/transcriber
 
 # Set the working directory
-WORKDIR ttt
+WORKDIR transcriber
 
 # Create the virtual environment
 RUN python3 -m venv venv
@@ -25,7 +25,7 @@ RUN python3 -m venv venv
 RUN . venv/bin/activate
 
 # Install the required packages
-RUN pip3 install -r ttt/requirements.txt
+RUN /transcriber/venv/bin/python3 -m pip install -r requirements.txt
 
 # Set up the configuration files
 COPY nginx.conf /etc/nginx/sites-available/default

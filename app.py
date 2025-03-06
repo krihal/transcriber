@@ -33,7 +33,7 @@ TRANSCRIBE_DIR = Path("transcribed")
 TRANSCRIBE_DIR.mkdir(exist_ok=True)
 
 templates = Jinja2Templates(directory="templates")
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
 @app.get("/", response_class=HTMLResponse)
