@@ -19,7 +19,10 @@ import zmq
 
 context = zmq.Context()
 mq_socket = context.socket(zmq.PUB)  # Publisher socket
-mq_socket.bind(f"tcp://*:5555")
+try:
+    mq_socket.bind("tcp://*:5555")
+except zmq.error.ZMQError:
+    mq_socket.connect("tcp://localhost:5555")
 
 app = FastAPI(title="SUNET Transcriber")
 
