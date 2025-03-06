@@ -1,10 +1,16 @@
 import os
 import shutil
+
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import FastAPI, File, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi import FastAPI
+from fastapi import File
+from fastapi import Form
+from fastapi import Request
+from fastapi import UploadFile
+from fastapi.responses import FileResponse
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -26,8 +32,9 @@ async def index(request: Request):
 
 
 @app.post("/upload")
-async def upload_file(file: UploadFile = File(...)):
+async def upload_file(file: UploadFile = File(...), model: str = Form("whisper-large-v3")):
     try:
+        print(f"Selected model: {model}")
         file_path = UPLOAD_DIR / file.filename
 
         # Save the file
@@ -64,9 +71,9 @@ async def get_files():
     <table class="table table-striped table-hover">
         <thead>
             <tr>
-                <th>Filename</th>
+                <th>Transcription</th>
                 <th>Size</th>
-                <th>Upload Date</th>
+                <th>Date</th>
                 <th>Actions</th>
             </tr>
         </thead>

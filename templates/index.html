@@ -1,43 +1,138 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>File Manager</title>
+    <title>Transcriber</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/htmx/1.9.4/htmx.min.js"></script>
 </head>
 <body>
     <div class="container mt-5">
-        <!-- File Upload Form -->
-        <div class="container d-flex justify-content-center mb-5">
-            <div class="row">
-                <div class="col-md-20 p-4 border rounded shadow-sm">
-                    <h4>Upload File</h4>
-                    <form class="form">
-                        <div id="messages"></div>
-                        <div class="mb-3">
-                            <input type="file" class="form-control" id="avatarInput" name="file" required>
-                        </div>
-                        <button 
-                            hx-post="/upload" 
-                            hx-encoding="multipart/form-data" 
-                            hx-target="#messages" 
-                            hx-swap="outerHTML"
+        <!-- Navigation Bar with Upload Button -->
+        <nav class="navbar navbar-expand-lg navbar-light bg-light mb-4 rounded shadow-sm">
+            <div class="container-fluid">
+                <a class="navbar-brand" href="#">SUNET Transcriber</a>
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+                <div class="collapse navbar-collapse" id="navbarNav">
+                    <ul class="navbar-nav ms-auto">
+                        <li class="nav-item me-2">
+                            <div class="dropdown">
+                                <button class="btn btn-secondary dropdown-toggle" type="button" id="modelDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                                    <i class="bi bi-cpu"></i> Select Model
+                                </button>
+                                <ul class="dropdown-menu" aria-labelledby="modelDropdown" id="model-selection">
+                                    <li><a class="dropdown-item model-option" data-model="whisper-tiny" href="#">Whisper Tiny</a></li>
+                                    <li><a class="dropdown-item model-option" data-model="whisper-base" href="#">Whisper Base</a></li>
+                                    <li><a class="dropdown-item model-option" data-model="whisper-small" href="#">Whisper Small</a></li>
+                                    <li><a class="dropdown-item model-option" data-model="whisper-medium" href="#">Whisper Medium</a></li>
+                                    <li><a class="dropdown-item model-option" data-model="whisper-large-v3" href="#">Whisper Large v3</a></li>
+                                </ul>
+                            </div>
+                        </li>
+                        <li class="nav-item">
+                            <button class="btn btn-primary" 
+                            hx-target="#modal-content" 
                             hx-trigger="click"
-                            type="submit" 
-                            class="btn btn-primary">Upload</button>
-                    </form>
+                            data-bs-toggle="modal" 
+                            data-bs-target="#uploadModal">
+                            <i class="bi bi-upload"></i> Upload File
+                            </button>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Upload Modal -->
+        <div class="modal fade" id="uploadModal" tabindex="-1" aria-labelledby="uploadModalLabel" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="uploadModalLabel">Upload File</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div id="modal-content">
+                            <!-- Form will be loaded here -->
+                            <form class="form" id="upload-form">
+                                <div id="messages"></div>
+                                <div class="mb-3">
+                                    <label for="avatarInput" class="form-label">Audio File</label>
+                                    <input type="file" class="form-control" id="avatarInput" name="file" accept="audio/*" required>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="selectedModel" class="form-label">Selected Model</label>
+                                    <input type="text" class="form-control" id="selectedModel" name="model" readonly value="whisper-large-v3">
+                                    <div class="form-text">Select a model from the dropdown in the navigation bar</div>
+                                </div>
+                                <div class="mb-3">
+                                    <progress id="progress" value="0" max="100" class="w-100"></progress>
+                                </div>
+                                <div class="d-flex justify-content-end">
+                                    <button type="button" class="btn btn-secondary me-2" data-bs-dismiss="modal">Cancel</button>
+                                    <button hx-post="/upload" hx-encoding="multipart/form-data" hx-target="#messages" hx-swap="outerHTML" hx-trigger="click" type="submit" class="btn btn-primary">Transcribe</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
-        
+
         <!-- Files Table -->
-        <div 
-            id="files-table" 
-            hx-get="/api/files" 
-            hx-trigger="load, every 30s, fileUploaded from:body"
-            hx-swap="innerHTML">
-            <!-- Table will be loaded here -->
-        </div>
+        <div id="files-table" hx-get="/api/files" hx-trigger="load, every 30s, fileUploaded from:body" hx-swap="innerHTML"></div>
     </div>
-</body>
+
+    <!-- Bootstrap JS (required for modal functionality) -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+        <script>
+            // Model selection logic
+            document.querySelectorAll('.model-option').forEach(function(option) {
+                option.addEventListener('click', function(e) {
+                    e.preventDefault();
+
+                    // Update dropdown button text
+                    const modelName = this.textContent;
+                    const modelValue = this.getAttribute('data-model');
+                    document.getElementById('modelDropdown').textContent = modelName;
+
+                    // Update hidden input in form
+                    document.getElementById('selectedModel').value = modelValue;
+
+                    // Highlight selected option
+                    document.querySelectorAll('.model-option').forEach(opt => {
+                        opt.classList.remove('active');
+                    });
+                    this.classList.add('active');
+                });
+            });
+
+            // Upload progress tracking
+            htmx.on('#upload-form', 'htmx:xhr:progress', function(evt) {
+                htmx.find('#progress').setAttribute('value', evt.detail.loaded/evt.detail.total * 100);
+            });
+
+            // Close modal and refresh file list on successful upload
+            htmx.on('htmx:afterRequest', function(evt) {
+                if (evt.detail.successful && evt.detail.pathInfo.requestPath === '/upload') {
+                    // Hide the modal
+                    var uploadModal = bootstrap.Modal.getInstance(document.getElementById('uploadModal'));
+                    if (uploadModal) {
+                        uploadModal.hide();
+                    }
+
+                    // Trigger file list refresh
+                    htmx.trigger(document.body, 'fileUploaded');
+
+                    // Reset the form
+                    document.getElementById('upload-form').reset();
+                    htmx.find('#progress').setAttribute('value', 0);
+
+                    // Reset the model selection to default
+                    document.getElementById('selectedModel').value = 'whisper-large-v3';
+                }
+            });
+        </script>
+    </body>
 </html>
