@@ -9,7 +9,9 @@ RUN apt-get update && apt-get install -y \
     python3-venv \
     git \
     nginx \
-    supervisor
+    supervisor \
+    ffmpeg
+
 
 
 # Clone the repository
