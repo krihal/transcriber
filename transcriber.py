@@ -7,7 +7,7 @@ import time
 
 from pathlib import Path
 
-import whisper
+import whisperx
 import zmq
 
 from watchdog.events import FileSystemEventHandler
@@ -20,8 +20,8 @@ logging.basicConfig(
 logger = logging.getLogger("whisper_transcriber")
 
 # Configuration
-WATCH_DIRECTORY = "transcoded"
-OUTPUT_DIRECTORY = "transcribed"
+WATCH_DIRECTORY = "/tmp/transcoded"
+OUTPUT_DIRECTORY = "/tmp/transcribed"
 SUPPORTED_AUDIO_EXTENSIONS = {".mp3", ".wav", ".mp4", ".m4a", ".flac", ".ogg"}
 MAX_WORKER_THREADS = 2
 file_queue = queue.Queue()
@@ -38,7 +38,7 @@ def transcribe_audio(audio_path, model):
 
         # Load Whisper model
         logger.info(f"Loading Whisper model: {model}")
-        model = whisper.load_model(model)
+        model = whisperx.load_model(model, device="cpu", compute_type="int8")
 
         logger.info("Whisper model loaded successfully")
 
@@ -103,8 +103,8 @@ class AudioFileHandler(FileSystemEventHandler):
             return
 
         # Avoid processing the same file multiple times (watchdog can trigger multiple events)
-        if str(file_path) in self.processed_files:
-            return
+        #if str(file_path) in self.processed_files:
+        #    return
 
         logger.info(f"New audio file detected: {file_path}")
         self.processed_files.add(str(file_path))
