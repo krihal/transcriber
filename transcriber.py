@@ -2,11 +2,15 @@ import json
 import logging
 import os
 import queue
+import sys
 import threading
 import time
 
 from pathlib import Path
 
+import json
+import os
+import torch
 import whisperx
 import zmq
 
@@ -20,8 +24,21 @@ logging.basicConfig(
 logger = logging.getLogger("whisper_transcriber")
 
 # Configuration
-WATCH_DIRECTORY = "/tmp/transcoded"
-OUTPUT_DIRECTORY = "/tmp/transcribed"
+if not os.environ.get("HF_AUTH_TOKEN"):
+    raise ValueError("HF_AUTH_TOKEN environment variable is not set")
+else:
+    HF_AUTH_TOKEN = os.environ.get("HF_AUTH_TOKEN")
+
+if os.environ.get("WATCH_DIRECTORY"):
+    WATCH_DIRECTORY = Path(os.environ.get("WATCH_DIRECTORY"))
+else:
+    WATCH_DIRECTORY = "/home/ubuntu/data/transcoded"
+
+if os.environ.get("OUTPUT_DIRECTORY"):
+    OUTPUT_DIRECTORY = Path(os.environ.get("OUTPUT_DIRECTORY"))
+else:
+    OUTPUT_DIRECTORY = "/home/ubuntu/data/transcribed"
+
 SUPPORTED_AUDIO_EXTENSIONS = {".mp3", ".wav", ".mp4", ".m4a", ".flac", ".ogg"}
 MAX_WORKER_THREADS = 2
 file_queue = queue.Queue()
@@ -30,32 +47,61 @@ file_queue = queue.Queue()
 os.makedirs(WATCH_DIRECTORY, exist_ok=True)
 os.makedirs(OUTPUT_DIRECTORY, exist_ok=True)
 
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
+
 
 def transcribe_audio(audio_path, model):
     """Transcribe audio file using Whisper"""
     try:
         logger.info(f"Starting transcription of {audio_path}")
 
-        # Load Whisper model
-        logger.info(f"Loading Whisper model: {model}")
-        model = whisperx.load_model(model, device="cpu", compute_type="int8")
+        if torch.cuda.is_available():
+            device = "cuda"
+            compute_type = "float16"
+        else:
+            device = "cpu"
+            compute_type = "int8"
+        whisper = whisperx.load_model(
+            model, device=device, compute_type=compute_type)
+        model_a, metadata = whisperx.load_align_model(
+            device=device,
+            language_code="sv",
+            model_name="KBLab/wav2vec2-large-voxrex-swedish"
+        )
 
-        logger.info("Whisper model loaded successfully")
+        diarize_model = whisperx.DiarizationPipeline(
+            model_name="pyannote/speaker-diarization-3.1", use_auth_token=HF_AUTH_TOKEN, device=device
+        )
 
-        # Get transcription
-        result = model.transcribe(str(audio_path))
+        audio = whisperx.load_audio(audio_path)
+        result = whisper.transcribe(audio, batch_size=16)
+        aligned_result = whisperx.align(
+            result["segments"], model_a, metadata, audio, device, return_char_alignments=False
+        )
+
+        diarize_segments = diarize_model(audio, min_speakers=1, max_speakers=5)
+        result = whisperx.assign_word_speakers(
+            diarize_segments, aligned_result)
 
         # Create output file path
         input_path = Path(audio_path)
         output_filename = f"{input_path.stem}_transcription.txt"
-        output_path = Path(OUTPUT_DIRECTORY) / output_filename
+        output_filename_json = f"{input_path.stem}_transcription.json"
+        output_path_txt = Path(OUTPUT_DIRECTORY) / \
+            output_filename.replace("_transcoded", "")
+        output_path_json = Path(OUTPUT_DIRECTORY) / \
+            output_filename_json.replace("_transcoded", "")
 
         # Write transcription to file
-        with open(output_path, "w", encoding="utf-8") as f:
+        with open(output_path_txt, "w", encoding="utf-8") as f:
             for line in result["segments"]:
                 f.write(line["text"] + "\n")
 
-        logger.info(f"Transcription completed and saved to {output_path}")
+        with open(output_path_json, "w", encoding="utf-8") as f:
+            f.write(json.dumps(result))
+
+        logger.info(f"Transcription completed.")
 
     except Exception as e:
         logger.error(f"Error transcribing {audio_path}: {str(e)}")
@@ -103,7 +149,7 @@ class AudioFileHandler(FileSystemEventHandler):
             return
 
         # Avoid processing the same file multiple times (watchdog can trigger multiple events)
-        #if str(file_path) in self.processed_files:
+        # if str(file_path) in self.processed_files:
         #    return
 
         logger.info(f"New audio file detected: {file_path}")
@@ -163,4 +209,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) > 1:
+        filename = sys.argv[1]
+        model = sys.argv[2]
+
+        transcribe_audio(filename, model)
+    else:
+        main()

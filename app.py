@@ -1,6 +1,7 @@
 import json
 import os
 import shutil
+import sys
 
 from datetime import datetime
 from pathlib import Path
@@ -19,21 +20,31 @@ import zmq
 
 context = zmq.Context()
 mq_socket = context.socket(zmq.PUB)  # Publisher socket
+
 try:
     mq_socket.bind("tcp://*:5555")
 except zmq.error.ZMQError:
     mq_socket.connect("tcp://localhost:5555")
+except Exception as e:
+    print("Failed to connect ZMQ: ", e)
+    sys.exit(1)
 
 app = FastAPI(title="SUNET Transcriber")
 
-UPLOAD_DIR = Path("uploads")
-UPLOAD_DIR.mkdir(exist_ok=True)
+if os.environ.get("UPLOAD_DIR"):
+    UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR"))
+else:
+    UPLOAD_DIR = Path("/home/ubuntu/data/uploads")
 
-TRANSCRIBE_DIR = Path("transcribed")
+if os.environ.get("TRANSCRIBE_DIR"):
+    TRANSCRIBE_DIR = Path(os.environ.get("TRANSCRIBE_DIR"))
+else:
+    TRANSCRIBE_DIR = Path("/home/ubuntu/data/transcribed")
+
+UPLOAD_DIR.mkdir(exist_ok=True)
 TRANSCRIBE_DIR.mkdir(exist_ok=True)
 
 templates = Jinja2Templates(directory="templates")
-# app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -81,7 +92,7 @@ async def upload_file(file: UploadFile = File(...), model: str = Form("whisper-l
         )
 
 
-@ app.get("/api/files", response_class=HTMLResponse)
+@app.get("/api/files", response_class=HTMLResponse)
 async def get_files():
     html = """
     <table class="table table-striped table-hover">
@@ -143,7 +154,7 @@ async def get_files():
     return HTMLResponse(html)
 
 
-@ app.get("/api/files/{file_id}")
+@app.get("/api/files/{file_id}")
 async def download_file(file_id: str):
     for file in os.listdir(TRANSCRIBE_DIR):
         filename = os.path.join(TRANSCRIBE_DIR, file)
@@ -152,11 +163,12 @@ async def download_file(file_id: str):
                 path=os.path.join(TRANSCRIBE_DIR, file),
                 filename=filename,
                 media_type="application/octet-stream",
+                headers={"Content-Disposition": f"attachment; filename={file}"},
             )
     return {"error": "File not found"}
 
 
-@ app.delete("/api/files/{file_id}", response_class=HTMLResponse)
+@app.delete("/api/files/{file_id}", response_class=HTMLResponse)
 async def delete_file(file_id: str):
     for file in os.listdir(TRANSCRIBE_DIR):
         filename = os.path.join(TRANSCRIBE_DIR, file)
@@ -177,8 +189,6 @@ async def delete_file(file_id: str):
     """
     )
 
-
-# Demonstration code to run the app (for development)
 if __name__ == "__main__":
     import uvicorn
 
